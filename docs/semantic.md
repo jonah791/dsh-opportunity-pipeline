@@ -96,7 +96,7 @@
 | # | 可证伪命题 | 证据（单测名或命令或落盘产物） | 状态 |
 |---|---|---|---|
 | 1 | 打分公式确定：同输入同输出，各项进明细，总分封顶 100 | `tests/scoring.test.mjs`（7 例） | 已实测（离线） |
-| 2 | 未知 op 判否（fail-closed） | `tests/scoring.test.mjs` 不覆盖 ⇒ 见 `tests/spec.test.mjs` | 待验收 |
+| 2 | 未知 op 判否（fail-closed） | `tests/spec.test.mjs`「尸体测试：未知 op（拼错）⇒ 判否，**绝不判是**」——8 个拼错 op（`equal`/`EQ`/`equals`/`eql`/`==`/`contain`/`existsAny`/空串）全判否，且**同数据用正确 op 必须判是**（对照证明那个「否」不是数据本来就不匹配） | 已实测（离线） |
 | 3 | 指纹稳定且跨源不同 | `tests/scoring.test.mjs`「指纹稳定且大小写无关」 | 已实测（离线） |
 | 4 | 命中排除词 ⇒ 0 分 + 理由，且明细不被掩盖 | `tests/scoring.test.mjs`「命中排除词…」 | 已实测（离线） |
 | 5 | 账本坏 ⇒ 抛错；不存在 ⇒ 空初态（两者可区分） | `tests/store.test.mjs`「I1 不变量…」 | 已实测（离线） |
@@ -107,12 +107,12 @@
 | 10 | 呈现即记账：每次 digest 追加一行；写失败返回 false 不抛 | `tests/store.test.mjs`「I3 呈现即记账…」 | 已实测（离线） |
 | 11 | 原子写不留 `.tmp` 残片 | `tests/store.test.mjs`「落盘往返…」 | 已实测（离线） |
 | 12 | 构建与类型：`npm run build` / `tsc --noEmit` 退出码 0 | 命令 | 已实测（离线） |
-| 13 | 全量测试 16/16 全绿 | `node --test tests/*.test.mjs` | 已实测（离线） |
-| 14 | 迁移只读：迁移后旧状态文件 SHA-256 与迁移前一致 | `scripts/migrate-radar-state.mjs` 的 `--verify` 输出 | 待验收 |
-| 15 | 迁移保真：365 条旧 jobs 全部落进新账本，状态映射 new→fresh / considered→pursuing / applied→applied / ignored→dropped | 迁移脚本的计数输出 + `opp_list` 读数 | 待验收 |
-| 16 | 5 个工具在真实组合里在场 | `opp_sources` 等工具可调用（挂载后） | 待线上验收 |
-| 17 | 端到端：加一个真源 → `opp_scan` → `opp_digest` → 记账行出现 | 挂载后跑一轮 | 待线上验收 |
-| 18 | 本件不发消息：源码里零发送调用 | `grep -rn 'telegram\|sendMessage' src/` 应零命中 | 待验收 |
+| 13 | 全量测试 **24/24** 全绿 | `node --test tests/*.test.mjs`（scoring 7 + store 9 + spec 8） | 已实测（离线） |
+| 14 | 迁移只读：迁移后旧状态文件 SHA-256 与迁移前一致 | 迁移脚本输出「只读校验：旧文件逐字节未变 ✓」，哈希 `6773a6fdf9b6ecc4ea5abd6e340c45b62a25ef735d78dc89b9d015d6dcf86e5b` | 已实测（现场） |
+| 15 | 迁移保真：旧 jobs 落进新账本，状态映射 new→fresh / considered→pursuing / applied→applied / ignored→dropped | 实测 **365 → 356**（旧数据 9 条重复指纹按 I2 去重，保留 `lastSeenAt` 最新者）· 状态分布 `{new:364,considered:1}` → `{fresh:355,pursuing:1}` · 挂载后 `opp_list` 读出 356 条 | 已实测（现场 + 线上） |
+| 16 | 5 个工具在真实组合里在场 | 挂载 + 哨兵重启后：`opp_sources` 答（源注册表为空 + stateDir 正确解析到 `<DSH_HOME>/opportunity-pipeline`）· `opp_list` 读出 356 条；`plugin_boot_status` 报 **live 61 / 需重启 0** | 已实测（线上） |
+| 17 | 端到端：加一个真源 → `opp_scan` → `opp_digest` → 记账行出现 | 2026-09-23 实跑（冒烟源 `smoke-gh` = GitHub 公开 API）：`opp_scan` ⇒ `collected=30 · 新入账 30 · 账本 386 条 · 无失败`（HTTP 经 `ProxyAgent` 走 Clash 真通，`proxy_http=200`）；`opp_digest` ⇒ 3 条带分（**50/38/38，有分辨力**）· `呈现记账: ok`；盘上 `presentations.jsonl` 恰一行 `{count:3, fps:[…], minScore:0}` | 已实测（线上 + 落盘核对） |
+| 18 | 本件不发消息：源码里零发送调用 | `grep -rniE 'telegram\|sendMessage\|smtp\|webhook' src/` ⇒ **3 处命中全是注释/工具描述**（声明这条边界本身），**零代码命中** | 已实测（离线） |
 
 ## 8 · 与实现的关系
 
@@ -127,6 +127,7 @@
 ## 9 · 实践修订记录
 
 - 2026-09-23 首版（v0.1.0）：由 `dsh-earn-radar` + `dsh-freelance-radar` 融合重设计而来。三处**从旧件实测中修正**的语义：① digest **不再按「今天首次出现」过滤**（旧件 `freelance-radar/src/index.ts:555` 会让未标记的高分机会次日静默消失且永不回来）② 重复入库**保留既有 status** ③ `authRef` 从「指向 `earn-auth.json` 的 `{value}`」改为「**引用名**」——凭据值不再落状态文件（I4）。另：旧件 `earn-platforms.json` 在盘上**不存在**（注册表从未落盘）⇒ 迁移无此面。
+- 2026-09-23 同日验收闭环：18 条验收**全部结案**（离线单测 24/24 · 迁移只读与保真 · 挂载后工具在真实组合可答 · 端到端冒烟含 digest 与呈现记账 · 零发送调用）。**过程中逼出两条实现缺口**（已入 §10）：账本无删除面、`opp_scan` 无 dry-run——**纯函数测试看不见它们，是端到端冒烟逼出来的**。另记一个正面数据点：30 条真实条目上分数分布 50/38/38 ⇒ 打分**有分辨力**（对 §10 第 1 条「权重无标定」是个初步反证）。
 
 ## 10 · 未决问题
 
@@ -136,3 +137,5 @@
 4. **`opp_sources(upsert)` 没有「先跑通再保存」**——旧件 `earn_remember` 有该能力（带 probes 时先跑通、跑不通拒绝保存）。是否补回？
 5. **迁移脚本的幂等性**——重复运行是否会重复计入（当前设计是「覆盖写新账本」，故幂等；但未实测）。
 6. **呈现账本没有消费方**——`presentations.jsonl` 在写，但「哪些机会已经被推过、要不要节流」尚无工具面。旧件连这个面都没有，故不是回归，是**未闭合的新能力**。
+7. **账本没有删除面**——只有 `decide`（改状态）与 `opp_digest`，没有「移除一条 / 清一批」。冒烟测试留下的 30 条 `smoke-gh` 条目因此只能留在账本里（分数 38–50、状态 `fresh`，会在低门槛 digest 里出现）。要么补删除/归档面，要么给扫描加不落账本的 dry-run 通道（见第 8 条）。
+8. **`opp_scan` 没有 dry-run**——加源时无法「先跑通再决定是否落账」（旧件 `earn_remember` 带 probes 时有该能力）。这是端到端冒烟会污染账本的结构性原因。

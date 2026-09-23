@@ -83,7 +83,15 @@ function main() {
   }
   const parsed = JSON.parse(readFileSync(OLD_JOBS, 'utf8'))
   const jobs = Array.isArray(parsed?.jobs) ? parsed.jobs : []
-  const opportunities = jobs.map(convert)
+  const converted = jobs.map(convert)
+  // I2 不变量：指纹唯一。旧账本实测有 9 条重复 fp（同 fp 不同 updatedAt），
+  // 保留 lastSeenAt 最新的一条——直接写入会破坏新账本的不变量。
+  const byFp = new Map()
+  for (const o of converted) {
+    const prev = byFp.get(o.fp)
+    if (prev === undefined || o.lastSeenAt > prev.lastSeenAt) byFp.set(o.fp, o)
+  }
+  const opportunities = [...byFp.values()]
 
   const counts = {}
   for (const o of opportunities) counts[o.status] = (counts[o.status] ?? 0) + 1
