@@ -63,8 +63,8 @@
 
 | 工具 | 意图 | 关键参数 | 返回 |
 |---|---|---|---|
-| `opp_sources` | 源注册表：列/看/增改/删 | `action`（list/get/upsert/remove）· `id` · `sourceJson` | 文本（表或单条 JSON） |
-| `opp_scan` | 采集 → 打分 → 并账 | `source`（缺省全部 enabled） | 各源计数 + 失败清单 + 新入账条数 |
+| `opp_sources` | 源注册表：列/看/增改/删/**清** | `action`（list/get/upsert/remove/**purge**）· `id` · `sourceJson` | 文本（表或单条 JSON）；`purge` 回报「源 + 连带清掉的账本条目数」 |
+| `opp_scan` | 采集 → 打分 → 并账 | `source`（缺省全部 enabled）· `dryRun`（只报「会新增什么」，**不写账本**） | 各源计数 + 失败清单 + 新入账条数 |
 | `opp_list` | 列账本（分数降序） | `status` · `minScore` · `source` · `limit` | 文本（含每条 `fp`） |
 | `opp_decide` | 定状态 | `fp` · `status` · `note` | 文本 |
 | `opp_digest` | 出 digest **并记账** | `minScore` · `limit` · `record` | 文本（含呈现记账结果） |
@@ -113,6 +113,8 @@
 | 16 | 5 个工具在真实组合里在场 | 挂载 + 哨兵重启后：`opp_sources` 答（源注册表为空 + stateDir 正确解析到 `<DSH_HOME>/opportunity-pipeline`）· `opp_list` 读出 356 条；`plugin_boot_status` 报 **live 61 / 需重启 0** | 已实测（线上） |
 | 17 | 端到端：加一个真源 → `opp_scan` → `opp_digest` → 记账行出现 | 2026-09-23 实跑（冒烟源 `smoke-gh` = GitHub 公开 API）：`opp_scan` ⇒ `collected=30 · 新入账 30 · 账本 386 条 · 无失败`（HTTP 经 `ProxyAgent` 走 Clash 真通，`proxy_http=200`）；`opp_digest` ⇒ 3 条带分（**50/38/38，有分辨力**）· `呈现记账: ok`；盘上 `presentations.jsonl` 恰一行 `{count:3, fps:[…], minScore:0}` | 已实测（线上 + 落盘核对） |
 | 18 | 本件不发消息：源码里零发送调用 | `grep -rniE 'telegram\|sendMessage\|smtp\|webhook' src/` ⇒ **3 处命中全是注释/工具描述**（声明这条边界本身），**零代码命中** | 已实测（离线） |
+| 19 | 退役一个源时能**连它的账本条目一起清**（删除面） | `tests/store.test.mjs`「removeBySource…」（如实回报条数 / 不误伤他源 / 源不存在不抛）+ 2026-09-23 线上实跑：`opp_sources{action:purge,id:smoke-gh}` ⇒ 「已清除源 smoke-gh 及其账本条目 **30 条**（余 **356** 条）」；盘上核实：源注册表 0 个 · **分数>0 的条目 0 条** · 四个真实源身份（`eleduck/remoteok/remotive/wwr`）完好 | 已实测（线上 + 落盘核对） |
+| 20 | `opp_scan(dryRun)` 只报「会新增什么」而**不写账本** | 2026-09-23 线上实跑：跑前账本 386 条 ⇒ dryRun 报「若真跑将新入账 0 条，账本将变 386 条（**本次未写账本**）」⇒ 盘上条数仍 386，且 **mtime 停在跑前那次 scan 的时刻（21:32）**（mtime 是不写的硬证据） | 已实测（线上 + mtime 取证） |
 
 ## 8 · 与实现的关系
 
@@ -128,14 +130,15 @@
 
 - 2026-09-23 首版（v0.1.0）：由 `dsh-earn-radar` + `dsh-freelance-radar` 融合重设计而来。三处**从旧件实测中修正**的语义：① digest **不再按「今天首次出现」过滤**（旧件 `freelance-radar/src/index.ts:555` 会让未标记的高分机会次日静默消失且永不回来）② 重复入库**保留既有 status** ③ `authRef` 从「指向 `earn-auth.json` 的 `{value}`」改为「**引用名**」——凭据值不再落状态文件（I4）。另：旧件 `earn-platforms.json` 在盘上**不存在**（注册表从未落盘）⇒ 迁移无此面。
 - 2026-09-23 同日验收闭环：18 条验收**全部结案**（离线单测 24/24 · 迁移只读与保真 · 挂载后工具在真实组合可答 · 端到端冒烟含 digest 与呈现记账 · 零发送调用）。**过程中逼出两条实现缺口**（已入 §10）：账本无删除面、`opp_scan` 无 dry-run——**纯函数测试看不见它们，是端到端冒烟逼出来的**。另记一个正面数据点：30 条真实条目上分数分布 50/38/38 ⇒ 打分**有分辨力**（对 §10 第 1 条「权重无标定」是个初步反证）。
+- 2026-09-23 同日**补缺闭环**（两条缺口当天发现、当天修、当天验）：`opp_sources` 增 `action=purge`（退役源时连它的账本条目一起清）+ `opp_scan` 增 `dryRun`（只报会新增什么、不写账本）；配套新增纯函数 `store.removeBySource` 与测试。**刻意不加工具**——保持「工具面 5 个」的承诺不被「顺手加个工具」稀释。单测 24 → **25/25**；线上复验：`purge` 清掉 30 条（账本 386→356）· `dryRun` 使账本 mtime 不动。⇒ 两条缺口**已从 §10 移出**。
 
 ## 10 · 未决问题
 
 1. **打分权重无实测支撑**——公式是设计判断，旧件没留下可标定的样本。若它不能把机会分出层次，正确处置是**删掉没有分辨力的项**，而不是反复调权重。
 2. **`builtin` 档未实现**——需要签名/分页/令牌刷新的源（含需要认证的源）目前无法接入。是补齐 builtin，还是把这类源做成「本地代理脚本 + probe」？
-3. **`spec.test.mjs` 未写**（验收表第 2 行）——`matchWhere` 的九种 op 与未知 op 判否尚无单测覆盖。
-4. **`opp_sources(upsert)` 没有「先跑通再保存」**——旧件 `earn_remember` 有该能力（带 probes 时先跑通、跑不通拒绝保存）。是否补回？
+3. ~~**`spec.test.mjs` 未写**~~ **2026-09-23 结案**：`tests/spec.test.mjs` 已写（8 例）——`getPath` / `matchWhere` 九种 op / **未知 op 判否的尸体测试**（8 个拼错 op 全判否 + 同数据用正确 op 判是的对照）/ `pickItems` / `seenKey` / `projectItem`。
+4. **`opp_sources(upsert)` 没有「先跑通再保存」**——旧件 `earn_remember` 有该能力（带 probes 时先跑通、跑不通拒绝保存）。**2026-09-23 部分缓解**：`opp_scan(dryRun)` 提供了「先跑通再决定是否落账」的通道；但 `upsert` 本身仍不自动验证——是否把验证并进 upsert 待定。
 5. **迁移脚本的幂等性**——重复运行是否会重复计入（当前设计是「覆盖写新账本」，故幂等；但未实测）。
 6. **呈现账本没有消费方**——`presentations.jsonl` 在写，但「哪些机会已经被推过、要不要节流」尚无工具面。旧件连这个面都没有，故不是回归，是**未闭合的新能力**。
-7. **账本没有删除面**——只有 `decide`（改状态）与 `opp_digest`，没有「移除一条 / 清一批」。冒烟测试留下的 30 条 `smoke-gh` 条目因此只能留在账本里（分数 38–50、状态 `fresh`，会在低门槛 digest 里出现）。要么补删除/归档面，要么给扫描加不落账本的 dry-run 通道（见第 8 条）。
-8. **`opp_scan` 没有 dry-run**——加源时无法「先跑通再决定是否落账」（旧件 `earn_remember` 带 probes 时有该能力）。这是端到端冒烟会污染账本的结构性原因。
+7. ~~**账本没有删除面**~~ **2026-09-23 结案**：`opp_sources{action:purge}` 已落地（移除源**并**清掉它的全部账本条目，如实回报条数）；线上复验清掉 30 条 smoke 条目、账本 386→356、四个真实源身份完好。判据见 §7 第 19 行。
+8. ~~**`opp_scan` 没有 dry-run**~~ **2026-09-23 结案**：`opp_scan{dryRun:true}` 已落地，只报「会新增什么」不写账本；线上复验账本条数与 **mtime** 都不动。判据见 §7 第 20 行。
