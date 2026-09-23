@@ -26,6 +26,7 @@ import {
   loadSources,
   mergeOpportunities,
   pathsOf,
+  removeBySource,
   saveLedger,
   saveSources,
   selectForDigest,
@@ -99,7 +100,7 @@ export function apply(ctx: Context, config: Config): void {
       + 'probe 字段：{label, url, method?, itemsPath?, where?[{path,op,value}], itemKey?, itemTitle?, itemValue?, unit?}；'
       + 'op 取值 eq/neq/in/startsWith/notStartsWith/gt/lt/contains/exists，未知 op 一律判否（fail-closed）。',
     parameters: {
-      action: { type: 'string', description: 'list（缺省）| get | upsert | remove' },
+      action: { type: 'string', description: 'list（缺省）| get | upsert | remove | purge（移除源**并清掉它的全部账本条目**——退役一个源时用它）' },
       id: { type: 'string', description: '源 id（get/upsert/remove 需要）' },
       sourceJson: { type: 'string', description: 'upsert 时的源记录 JSON：{id,kind:"probe",label,enabled,probes:[…]}' },
     },
@@ -126,6 +127,17 @@ export function apply(ctx: Context, config: Config): void {
         saveSources(DIR, next)
         return { text: '已移除源 ' + id + '（余 ' + next.length + ' 个）' }
       }
+      if (action === 'purge') {
+        const next = sources.filter(s => s.id !== id)
+        const sourceGone = next.length !== sources.length
+        const swept = removeBySource(loadLedger(DIR).opportunities, id)
+        saveSources(DIR, next)
+        saveLedger(DIR, { version: 1, opportunities: swept.opportunities })
+        return {
+          text: '已清除源 ' + id + (sourceGone ? '' : '（源本就不在注册表里）')
+            + ' 及其账本条目 ' + swept.removed + ' 条（余 ' + swept.opportunities.length + ' 条）',
+        }
+      }
       if (action === 'upsert') {
         if (args.sourceJson === undefined) return { text: 'upsert 需要 sourceJson' }
         let spec: Source
@@ -150,9 +162,12 @@ export function apply(ctx: Context, config: Config): void {
     name: 'opp_scan',
     description: '扫描机会源（缺省全部 enabled 的源）：采集 → 统一打分 → 并入账本（指纹去重，已决策的状态不被重置）。'
       + '返回各源计数、失败清单与新入账条数。',
-    parameters: { source: { type: 'string', description: '只扫这一个源 id（缺省=全部 enabled）' } },
+    parameters: {
+      source: { type: 'string', description: '只扫这一个源 id（缺省=全部 enabled）' },
+      dryRun: { type: 'boolean', description: '只报「会新增什么」不写账本（缺省 false）——加源前先跑通用它' },
+    },
     output: textOut,
-    async execute(args: { source?: string }) {
+    async execute(args: { source?: string; dryRun?: boolean }) {
       const sources = loadSources(DIR).filter(s => args.source === undefined || s.id === args.source)
       if (sources.length === 0) return { text: '(没有匹配的源：' + pathsOf(DIR).sources + ')' }
       const nowMs = Date.now()
@@ -191,8 +206,18 @@ export function apply(ctx: Context, config: Config): void {
 
       const before = loadLedger(DIR).opportunities.length
       const merged = mergeOpportunities(loadLedger(DIR).opportunities, incoming, nowIso)
-      saveLedger(DIR, { version: 1, opportunities: merged })
       const added = merged.length - before
+
+      if (args.dryRun === true) {
+        return {
+          text: ['OPPORTUNITY SCAN (dry-run)  at=' + nowIso + '  sources=' + sources.length,
+            ...lines,
+            '采集 ' + collected + ' 条 · **若真跑**将新入账 ' + added + ' 条，账本将变 ' + merged.length + ' 条（本次未写账本）',
+            failures.length > 0 ? '--- 失败 ' + failures.length + ' ---\n' + failures.map(f => '  ' + f).join('\n') : '--- 无失败 ---',
+          ].join('\n'),
+        }
+      }
+      saveLedger(DIR, { version: 1, opportunities: merged })
 
       return {
         text: ['OPPORTUNITY SCAN  at=' + nowIso + '  sources=' + sources.length,

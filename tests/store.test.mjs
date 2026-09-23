@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   appendPresentation, decideOpportunity, loadLedger, loadSources, mergeOpportunities,
-  pathsOf, readJsonStrict, saveLedger, selectForDigest,
+  pathsOf, readJsonStrict, removeBySource, saveLedger, selectForDigest,
 } from '../lib/store.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'opp-test-'))
@@ -94,4 +94,20 @@ test('落盘往返：saveLedger 后 loadLedger 读回同一形状，且不留 .t
   saveLedger(d, { version: 1, opportunities: [opp('a', 1)] })
   assert.equal(loadLedger(d).opportunities.length, 1)
   assert.equal(existsSync(pathsOf(d).ledger + '.tmp'), false, '原子写不得留临时文件')
+})
+
+test('removeBySource：清掉某源全部条目并如实回报条数（退役源时的删除面）——不静默、不误伤他源', () => {
+  const rows = [
+    opp('a', 10),                                       // sourceId 默认 's'
+    { ...opp('b', 20), sourceId: 'other' },
+    { ...opp('c', 30), sourceId: 'other' },
+  ]
+  const r = removeBySource(rows, 's')
+  assert.equal(r.removed, 1, '如实回报移除条数（供调用方回显）')
+  assert.equal(r.opportunities.length, 2)
+  assert.ok(r.opportunities.every(o => o.sourceId === 'other'), '只动目标源，不误伤他源')
+
+  const none = removeBySource(rows, 'nope')
+  assert.equal(none.removed, 0, '源不存在 ⇒ 0 条（不抛）')
+  assert.equal(none.opportunities.length, 3, '不存在时一条都不动')
 })

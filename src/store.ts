@@ -174,6 +174,23 @@ export function decideOpportunity(
 }
 
 /**
+ * 移除某个源的**全部**账本条目（**纯函数**）。
+ *
+ * 用途：退役一个源时把它留下的条目一起清掉——否则「源没了、条目还在」会让 digest
+ * 一直推一个再也更新不了的机会。2026-09-23 端到端冒烟暴露了这一点：账本原本没有删除面，
+ * 冒烟源留下的 30 条只能留在账本里（见语义文档 §10 第 7 条）。
+ *
+ * @returns 新条目数组 + 被移除的条数（调用方据此回报，**不静默**）
+ */
+export function removeBySource(
+  opportunities: readonly Opportunity[],
+  sourceId: string,
+): { opportunities: Opportunity[]; removed: number } {
+  const kept = opportunities.filter(o => o.sourceId !== sourceId)
+  return { opportunities: kept, removed: opportunities.length - kept.length }
+}
+
+/**
  * 选出该进 digest 的机会（**纯函数**）。
  *
  * 判据：`status` 是 `fresh` 或 `pursuing`（`applied`/`dropped` 不再打扰我）
