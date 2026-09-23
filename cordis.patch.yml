@@ -1,0 +1,4 @@
+- insert:
+    - id: agent-opportunity-pipeline
+      name: dsh-opportunity-pipeline
+      config: {}
