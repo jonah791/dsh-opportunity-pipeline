@@ -1,8 +1,42 @@
+<!--
+  DSH 插件生态公约声明（plugin-ecosystem-convention · 组合优先/声明清晰/兼容优先）
+  purpose: 机会流水线：把「值得我投入的机会」从多源采集经统一打分收敛成一份 digest、经一条呈现通道送达，且每一步都留账
+  inject: ['tools']
+  tools: opp_sources,opp_scan,opp_list,opp_decide,opp_digest
+  runtime: host-only
+  envDeps: 见 README「配置」节
+  boundary: 见 README「设计要点」与「生效判据与回退」节
+  compat: cordis ^4.0.1 / dsh-tools >=0.1.0-rc.6
+-->
 # dsh-opportunity-pipeline
+
+<p align="center">
+  <a href="https://github.com/jonah791/dsh-opportunity-pipeline"><img src="https://img.shields.io/badge/version-0.1.0-blue" alt="version"></a>
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="license">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6" alt="TypeScript">
+  <img src="https://img.shields.io/badge/tests-25%20passed-brightgreen" alt="tests">
+</p>
 
 机会流水线：把「值得我投入的机会」从多源采集，经统一打分收敛成**一份 digest**、经**一条呈现通道**送达，且每一步都留账。
 
 替换 `dsh-earn-radar` + `dsh-freelance-radar`。设计依据：[插件融合设计_机会流水线](../../docs/plans/插件融合设计_机会流水线_2026-09-23.md)；语义正本：[docs/semantic.md](docs/semantic.md)。
+
+## 快速开始
+
+**1) 装依赖**（在目标 profile 的 `package.json` 加 link 依赖）：
+
+```jsonc
+"dsh-opportunity-pipeline": "link:E:/alice/self-plugins/dsh-opportunity-pipeline"
+```
+
+**2) 挂组合**：
+
+```yaml
+- id: dsh-opportunity-pipeline
+  name: dsh-opportunity-pipeline
+```
+
+**3) 30 秒验证**：`opp_sources` → 应列出已注册机会源（缺省全部 enabled）
 
 ## 用途
 
